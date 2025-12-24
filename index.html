@@ -154,6 +154,7 @@ td input, td select {
   border: none;
   text-align: center;
   width: 100%;
+  background: transparent;
 }
 .section-title {
   background: var(--purple);
@@ -278,7 +279,14 @@ button.load-btn {
 .class-avg-result th {
   background: var(--purple);
 }
-/* Hide dropdown arrows in print */
+.term-display {
+  text-align: center;
+  font-weight: bold;
+  font-size: 16px;
+  margin: 15px 0;
+  color: var(--purple);
+}
+/* Print Styles */
 @media print {
   @page {
     size: A4;
@@ -289,19 +297,8 @@ button.load-btn {
     margin: 0;
     padding: 12mm;
   }
-  .controls, .small-btn, .print-btn, .auto-save-notice, .clear-btn, .summary-box, .extra-controls, .class-avg-section {
+  .controls, .small-btn, .print-btn, .auto-save-notice, .clear-btn, .summary-box, .extra-controls, .class-avg-section, .table-wrapper button {
     display: none !important;
-  }
-  table#resultTable th:nth-child(9), table#resultTable td:nth-child(9) {
-    display: none;
-  }
-  table#resultTable th:nth-child(7), table#resultTable td:nth-child(7) {
-    min-width: 60px;
-  }
-  table#resultTable th:nth-child(8), table#resultTable td:nth-child(8) {
-    min-width: 120px;
-    word-break: break-word;
-    white-space: normal;
   }
   .school-logo {
     width: 90px;
@@ -313,12 +310,31 @@ button.load-btn {
     font-size: 10pt;
   }
   table {
-    font-size: 9pt;
+    font-size: 8pt !important; /* Reduced for better fit */
   }
   th, td {
-    padding: 4px;
-    overflow: visible !important;
-    white-space: normal !important;
+    padding: 3px 4px !important;
+    border: 1px solid #000 !important;
+    white-space: nowrap;
+    overflow: visible;
+  }
+  th {
+    font-size: 8pt;
+  }
+  /* Ensure Total, Grade, Remark are visible and readable */
+  table#resultTable th:nth-child(6),
+  table#resultTable th:nth-child(7),
+  table#resultTable th:nth-child(8),
+  table#resultTable td:nth-child(6),
+  table#resultTable td:nth-child(7),
+  table#resultTable td:nth-child(8) {
+    min-width: 60px !important;
+    font-size: 8pt !important;
+  }
+  /* Hide Action column in print */
+  table#resultTable th:nth-child(9),
+  table#resultTable td:nth-child(9) {
+    display: none;
   }
   .section-title {
     padding: 4px;
@@ -333,14 +349,18 @@ button.load-btn {
   input, select, textarea {
     border: none !important;
     background: transparent !important;
-    font-size: 10pt !important;
+    font-size: 9pt !important;
   }
   select {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
+    color: #000;
   }
-  /* Align location icon with address text */
+  .term-display {
+    display: block !important;
+    page-break-inside: avoid;
+  }
   .contact-line {
     align-items: baseline;
   }
@@ -419,6 +439,8 @@ button.load-btn {
       </select>
       <button onclick="window.print()" class="print-btn">🖨️ Print Result</button>
     </div>
+    <!-- Term Display for Print -->
+    <div class="term-display" id="termDisplay" style="display:none;"></div>
     <div class="info-grid">
       <div><label>Name<input id="resultName"></label></div>
       <div><label>Admission No<input id="resultAdmNo"></label></div>
@@ -521,7 +543,7 @@ button.load-btn {
       <strong id="classAvgSummary"></strong>
       <table id="classAvgTable">
         <thead>
-          <tr><th>Student ID</th><th>Name</th><th>Average</th></tr>
+          <tr><th>Student ID</th><th>Name</th><th>Average</th><th>Action</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -535,16 +557,32 @@ const STORAGE_KEY_SIG_CLASS = 'sigClass';
 const STORAGE_KEY_SIG_HEAD = 'sigHead';
 const STORAGE_KEY_SCHOOL_INFO = 'schoolHeaderInfo';
 const STORAGE_KEY_COUNTERS = 'studentIdCounters';
+const subjectsList = [
+  "-Select subject-",
+  "English",
+  "Mathematics",
+  "CRS",
+  "IT",
+  "Social Studies",
+  "Elementary Science",
+  "Digital Art"
+];
 let autoSaveInterval = null;
 let lastSavedResultData = null;
-// Auto-save notice
+
 function showAutoSave(message = "Auto-saved") {
   const notice = document.getElementById('autoSaveNotice');
   notice.textContent = message + " at " + new Date().toLocaleTimeString();
   clearTimeout(notice.hideTimer);
   notice.hideTimer = setTimeout(() => notice.textContent = '', 3000);
 }
-// Auto-save logic
+
+function updateTermDisplay() {
+  const term = document.getElementById('termSelect').value;
+  document.getElementById('termDisplay').textContent = term + " Result";
+}
+document.getElementById('termSelect').addEventListener('change', updateTermDisplay);
+
 function startAutoSave() {
   if (autoSaveInterval) clearInterval(autoSaveInterval);
   autoSaveInterval = setInterval(() => {
@@ -559,7 +597,7 @@ function startAutoSave() {
     }
   }, 10000);
 }
-// Student ID Generation
+
 function generateStudentID() {
   const classCode = document.getElementById('classForID').value;
   if (!classCode) {
@@ -582,133 +620,143 @@ function generateStudentID() {
   };
   document.getElementById('resultClass').value = classMap[classCode] || classCode;
 }
-// Class Average Calculation
+
 function calculateClassAverage() {
   const classCode = document.getElementById('classCodeInput').value.trim().toUpperCase();
   if (!classCode) {
     alert("Please enter a class code.");
     return;
   }
+
+  const allKeys = Object.keys(localStorage);
   const results = [];
   let totalAvg = 0;
   let count = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
+
+  allKeys.forEach(key => {
     if (key.startsWith('result_')) {
       const studentID = key.substring(7);
       if (studentID.startsWith(classCode + '-')) {
         try {
           const data = JSON.parse(localStorage.getItem(key));
-          let grandTotal = 0;
-          let subjectCount = data.subjects ? data.subjects.length : 0;
-          data.subjects.forEach(sub => {
-            grandTotal += Number(sub.ca1 || 0) + Number(sub.ca2 || 0) + Number(sub.hw || 0) + Number(sub.exam || 0);
-          });
-          const avg = subjectCount > 0 ? (grandTotal / subjectCount).toFixed(2) : 0;
-          results.push({id: studentID, name: data.name || 'Unnamed', avg: parseFloat(avg)});
-          totalAvg += parseFloat(avg);
-          count++;
+          const avg = parseFloat(data.classAverage || 0);
+          if (!isNaN(avg) && data.name) {
+            results.push({ id: studentID, name: data.name, avg: avg });
+            totalAvg += avg;
+            count++;
+          }
         } catch (e) {}
       }
     }
-  }
+  });
+
   results.sort((a, b) => b.avg - a.avg);
-  const resultDiv = document.getElementById('classAvgResult');
-  const summary = document.getElementById('classAvgSummary');
-  const tbody = document.getElementById('classAvgTable').querySelector('tbody');
+
+  const tbody = document.querySelector('#classAvgTable tbody');
   tbody.innerHTML = '';
-  if (count === 0) {
-    summary.textContent = `No students found for class code: ${classCode}`;
-    resultDiv.style.display = 'block';
+
+  if (results.length === 0) {
+    document.getElementById('classAvgSummary').textContent = 'No results found for this class.';
+    document.getElementById('classAvgResult').style.display = 'block';
     return;
   }
-  const classAverage = (totalAvg / count).toFixed(2);
-  summary.innerHTML = `<strong>${count}</strong> students found | Class Average: <strong>${classAverage}</strong>`;
-  results.forEach((res, idx) => {
+
+  results.forEach((res, index) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${res.id}</td><td>${res.name}</td><td>${res.avg} (${getPositionSuffix(idx + 1)})</td>`;
+    tr.innerHTML = `
+      <td>${res.id}</td>
+      <td>${res.name || '(No name)'}</td>
+      <td>${res.avg.toFixed(2)}</td>
+      <td><button onclick="deleteStudentResult('${res.id}', this)" style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">×</button></td>
+    `;
     tbody.appendChild(tr);
   });
-  resultDiv.style.display = 'block';
+
+  const classAverage = (totalAvg / count).toFixed(2);
+  document.getElementById('classAvgSummary').textContent = `Class Average: ${classAverage} (${results.length} students)`;
+  document.getElementById('classAvgResult').style.display = 'block';
 }
-function getPositionSuffix(pos) {
-  if (pos % 10 === 1 && pos !== 11) return pos + 'st';
-  if (pos % 10 === 2 && pos !== 12) return pos + 'nd';
-  if (pos % 10 === 3 && pos !== 13) return pos + 'rd';
-  return pos + 'th';
+
+function deleteStudentResult(studentID, btn) {
+  if (confirm(`Delete result for ${studentID}? This cannot be undone.`)) {
+    localStorage.removeItem(`result_${studentID}`);
+    btn.closest('tr').remove();
+    calculateClassAverage(); // refresh summary
+  }
 }
-// Backup & Restore
+
 function backupData() {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     data[key] = localStorage.getItem(key);
   }
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `school-data-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.download = 'royal-wunderkind-backup-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
   URL.revokeObjectURL(url);
-  alert("Backup downloaded!");
 }
+
 function restoreData(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      if (confirm("This will overwrite all current saved data. Continue?")) {
-        localStorage.clear();
-        for (const key in data) {
-          localStorage.setItem(key, data[key]);
-        }
-        alert("Data restored successfully! Reloading page...");
-        location.reload();
-      }
+      Object.keys(data).forEach(key => {
+        localStorage.setItem(key, data[key]);
+      });
+      alert('Data restored successfully! Page will reload.');
+      location.reload();
     } catch (err) {
-      alert("Invalid backup file.");
+      alert('Invalid backup file.');
     }
   };
   reader.readAsText(file);
 }
+
 function clearAllData() {
-  if (confirm("This will delete ALL saved results, images, and settings. Continue?")) {
+  if (confirm('Delete ALL saved data (results, logo, signatures, counters)? This cannot be undone.')) {
     localStorage.clear();
-    alert("All data cleared!");
+    alert('All data cleared.');
     location.reload();
   }
 }
-// School Header Save/Load
+
 function saveSchoolHeader() {
   const info = {
-    name: document.getElementById('schoolName').innerText.trim(),
-    motto: document.getElementById('schoolMotto').innerText.trim(),
-    address: document.getElementById('schoolAddress').innerText.trim(),
-    phone: document.getElementById('schoolPhone').innerText.trim(),
-    email: document.getElementById('schoolEmail').innerText.trim(),
-    website: document.getElementById('schoolWebsite').innerText.trim()
+    name: document.getElementById('schoolName').textContent,
+    motto: document.getElementById('schoolMotto').textContent,
+    address: document.getElementById('schoolAddress').textContent,
+    phone: document.getElementById('schoolPhone').textContent,
+    email: document.getElementById('schoolEmail').textContent,
+    website: document.getElementById('schoolWebsite').textContent
   };
   localStorage.setItem(STORAGE_KEY_SCHOOL_INFO, JSON.stringify(info));
 }
+
 function loadSchoolHeader() {
   const saved = localStorage.getItem(STORAGE_KEY_SCHOOL_INFO);
   if (saved) {
     const info = JSON.parse(saved);
-    document.getElementById('schoolName').innerText = info.name;
-    document.getElementById('schoolMotto').innerText = info.motto;
-    document.getElementById('schoolAddress').innerText = info.address;
-    document.getElementById('schoolPhone').innerText = info.phone;
-    document.getElementById('schoolEmail').innerText = info.email;
-    document.getElementById('schoolWebsite').innerText = info.website;
+    document.getElementById('schoolName').textContent = info.name || 'ROYAL WUNDERKIND MODEL SCHOOL';
+    document.getElementById('schoolMotto').textContent = info.motto || 'Partnering with Christ for a better world';
+    document.getElementById('schoolAddress').textContent = info.address || '';
+    document.getElementById('schoolPhone').textContent = info.phone || '';
+    document.getElementById('schoolEmail').textContent = info.email || '';
+    document.getElementById('schoolWebsite').textContent = info.website || '';
   }
 }
+
 ['schoolName','schoolMotto','schoolAddress','schoolPhone','schoolEmail','schoolWebsite'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('blur', saveSchoolHeader);
 });
+
 function clearResultForm() {
   document.getElementById('studentID').value = '';
   document.getElementById('resultName').value = '';
@@ -718,36 +766,40 @@ function clearResultForm() {
   document.getElementById('resultPresent').value = '';
   document.getElementById('resultAbsent').value = '';
   document.getElementById('teacherComment').value = '';
-  document.getElementById('psycho1').value = '';
-  document.getElementById('psycho2').value = '';
-  document.getElementById('affect1').value = '';
-  document.getElementById('affect2').value = '';
-  document.getElementById('affect3').value = '';
-  document.getElementById('affect4').value = '';
   document.getElementById('positionInClass').value = '';
-  const tbody = document.querySelector('#resultTable tbody');
-  tbody.innerHTML = '';
+  document.querySelector('#resultTable tbody').innerHTML = '';
   addSubjectRow();
   calculateGrades();
-  lastSavedResultData = null;
 }
+
 function saveStudentResult() {
-  const id = document.getElementById('studentID').value.trim();
-  if (!id) { alert("Please enter or generate a Student ID"); return; }
-  localStorage.setItem(`result_${id}`, JSON.stringify(getCurrentResultData()));
-  lastSavedResultData = JSON.stringify(getCurrentResultData());
-  alert(`Result saved for ${id}`);
+  const studentID = document.getElementById('studentID').value.trim();
+  if (!studentID) {
+    alert('Please generate or enter a Student ID first.');
+    return;
+  }
+  const data = getCurrentResultData();
+  localStorage.setItem(`result_${studentID}`, JSON.stringify(data));
+  showAutoSave("Manually saved");
   clearResultForm();
 }
+
 function loadStudentResult() {
-  const id = document.getElementById('studentID').value.trim();
-  if (!id) { alert("Please enter a Student ID"); return; }
-  const saved = localStorage.getItem(`result_${id}`);
-  if (!saved) { alert(`No result found for ${id}`); return; }
-  const data = JSON.parse(saved);
-  loadResultFromData(data);
-  lastSavedResultData = JSON.stringify(data);
+  const studentID = document.getElementById('studentID').value.trim();
+  if (!studentID) {
+    alert('Please enter a Student ID to load.');
+    return;
+  }
+  const saved = localStorage.getItem(`result_${studentID}`);
+  if (saved) {
+    const data = JSON.parse(saved);
+    loadResultFromData(data);
+    document.getElementById('studentID').value = studentID;
+  } else {
+    alert('No result found for this Student ID.');
+  }
 }
+
 function getCurrentResultData() {
   const data = {
     name: document.getElementById('resultName').value,
@@ -762,12 +814,14 @@ function getCurrentResultData() {
     affect: [document.getElementById('affect1').value, document.getElementById('affect2').value,
              document.getElementById('affect3').value, document.getElementById('affect4').value],
     comment: document.getElementById('teacherComment').value,
-    position: document.getElementById('positionInClass').value
+    position: document.getElementById('positionInClass').value,
+    classAverage: document.getElementById('classAverage').value
   };
   document.querySelectorAll('#resultTable tbody tr').forEach(row => {
-    const inputs = row.querySelectorAll('input.score');
+    const subjectSelect = row.cells[0].querySelector('select');
+    const inputs = row.querySelectorAll('.score');
     data.subjects.push({
-      subject: row.cells[0].querySelector('input').value,
+      subject: subjectSelect.value,
       ca1: inputs[0].value,
       ca2: inputs[1].value,
       hw: inputs[2].value,
@@ -776,6 +830,7 @@ function getCurrentResultData() {
   });
   return data;
 }
+
 function loadResultFromData(data) {
   document.getElementById('resultName').value = data.name || '';
   document.getElementById('resultAdmNo').value = data.admNo || '';
@@ -799,12 +854,19 @@ function loadResultFromData(data) {
   });
   if ((data.subjects || []).length === 0) addSubjectRow();
   calculateGrades();
+  updateTermDisplay();
 }
+
 function addSubjectRow(subject='', ca1='', ca2='', hw='', exam='') {
   const tbody = document.getElementById('resultTable').querySelector('tbody');
   const tr = document.createElement('tr');
+  let options = subjectsList.map(s => `<option value="${s}" ${s === subject ? 'selected' : ''}>${s}</option>`).join('');
   tr.innerHTML = `
-    <td><input value="${subject}"></td>
+    <td>
+      <select class="subject-select">
+        ${options}
+      </select>
+    </td>
     <td><input class="score" value="${ca1}" type="number" min="0" max="15"></td>
     <td><input class="score" value="${ca2}" type="number" min="0" max="15"></td>
     <td><input class="score" value="${hw}" type="number" min="0" max="10"></td>
@@ -818,7 +880,7 @@ function addSubjectRow(subject='', ca1='', ca2='', hw='', exam='') {
       <option>Outstanding</option><option>Excellent</option><option>Very Good</option>
       <option>Good</option><option>Average</option><option>Fair</option><option>Fail</option>
     </select></td>
-    <td><button onclick="removeSubject(this)" class="  class="small-btn">Remove</button></td>
+    <td><button onclick="removeSubject(this)" class="small-btn">Remove</button></td>
   `;
   tbody.appendChild(tr);
   tr.querySelectorAll('.score').forEach(inp => inp.addEventListener('input', calculateGrades));
@@ -828,13 +890,16 @@ function addSubjectRow(subject='', ca1='', ca2='', hw='', exam='') {
   });
   calculateGrades();
 }
+
 function addSubject() {
   addSubjectRow();
 }
+
 function removeSubject(btn) {
   btn.closest('tr').remove();
   calculateGrades();
 }
+
 function calculateGrades() {
   let grandTotal = 0;
   let subjectCount = 0;
@@ -865,6 +930,7 @@ function calculateGrades() {
   const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
   document.getElementById('positionInClass').value = position + suffix;
 }
+
 function getGrade(score) {
   if (score >= 95) return 'A+';
   if (score >= 90) return 'A';
@@ -875,6 +941,7 @@ function getGrade(score) {
   if (score >= 50) return 'D';
   return 'F';
 }
+
 function getRemark(score) {
   if (score >= 95) return 'Outstanding';
   if (score >= 90) return 'Excellent';
@@ -884,91 +951,105 @@ function getRemark(score) {
   if (score >= 50) return 'Fair';
   return 'Fail';
 }
+
 function clearImage(e, container, storageKey) {
-  e.stopPropagation();
+  if (e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  if (typeof container === 'string') {
+    container = document.querySelector('.' + container) || container;
+  }
+  const span = container.querySelector('span');
+  const img = container.querySelector('img');
+  if (span) span.style.display = 'block';
+  if (img) img.remove();
   localStorage.removeItem(storageKey);
-  container.innerHTML = `<span style="color:#999;">Click to upload</span><button class="clear-btn" onclick="clearImage(event, this.parentElement, '${storageKey}')">×</button>`;
-  if (storageKey === STORAGE_KEY_LOGO) {
-    container.innerHTML = `<span style="color:#999;">Upload Logo</span><button class="clear-btn" onclick="clearImage(event, this.parentElement, '${STORAGE_KEY_LOGO}')">×</button>`;
-  }
 }
-function previewLogo(e) {
-  const file = e.target.files[0];
-  if (!file || file.size > 5*1024*1024) { alert("File too large"); return; }
-  const reader = new FileReader();
-  reader.onload = ev => {
-    localStorage.setItem(STORAGE_KEY_LOGO, ev.target.result);
-    const img = document.createElement('img');
-    img.src = ev.target.result;
-    const container = document.querySelector('.school-logo');
-    container.innerHTML = '';
-    container.appendChild(img);
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'clear-btn';
-    clearBtn.innerHTML = '×';
-    clearBtn.onclick = (e) => clearImage(e, container, STORAGE_KEY_LOGO);
-    container.appendChild(clearBtn);
-  };
-  reader.readAsDataURL(file);
-}
-function previewSignature(e, input) {
-  const file = e.target.files[0];
-  if (!file || file.size > 5*1024*1024) { alert("File too large"); return; }
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const key = input.id === 'classSigInput' ? STORAGE_KEY_SIG_CLASS :
-                input.id === 'headSigInput' ? STORAGE_KEY_SIG_HEAD : '';
-    localStorage.setItem(key, ev.target.result);
-    const img = document.createElement('img');
-    img.src = ev.target.result;
-    const container = input.parentElement.querySelector('.signature-upload');
-    container.innerHTML = '';
-    container.appendChild(img);
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'clear-btn';
-    clearBtn.innerHTML = '×';
-    clearBtn.onclick = (e) => clearImage(e, container, key);
-    container.appendChild(clearBtn);
-  };
-  reader.readAsDataURL(file);
-}
-function loadImages() {
-  const logo = localStorage.getItem(STORAGE_KEY_LOGO);
-  if (logo) {
-    const img = document.createElement('img');
-    img.src = logo;
-    const container = document.querySelector('.school-logo');
-    container.innerHTML = '';
-    container.appendChild(img);
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'clear-btn';
-    clearBtn.innerHTML = '×';
-    clearBtn.onclick = (e) => clearImage(e, container, STORAGE_KEY_LOGO);
-    container.appendChild(clearBtn);
-  }
-  ['classSigInput','headSigInput'].forEach(id => {
-    const key = id === 'classSigInput' ? STORAGE_KEY_SIG_CLASS :
-                id === 'headSigInput' ? STORAGE_KEY_SIG_HEAD : '';
-    const data = localStorage.getItem(key);
-    if (data) {
-      const img = document.createElement('img');
-      img.src = data;
-      const container = document.getElementById(id).parentElement.querySelector('.signature-upload');
-      container.innerHTML = '';
-      container.appendChild(img);
-      const clearBtn = document.createElement('button');
-      clearBtn.className = 'clear-btn';
-      clearBtn.innerHTML = '×';
-      clearBtn.onclick = (e) => clearImage(e, container, key);
-      container.appendChild(clearBtn);
+
+function previewLogo(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const container = document.querySelector('.school-logo');
+      let img = container.querySelector('img');
+      if (!img) {
+        img = document.createElement('img');
+        container.appendChild(img);
+      }
+      img.src = e.target.result;
+      container.querySelector('span').style.display = 'none';
+      localStorage.setItem(STORAGE_KEY_LOGO, e.target.result);
     }
-  });
+    reader.readAsDataURL(file);
+  }
 }
+
+function previewSignature(event, input) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const container = input.previousElementSibling;
+      let img = container.querySelector('img');
+      if (!img) {
+        img = document.createElement('img');
+        container.appendChild(img);
+      }
+      img.src = e.target.result;
+      container.querySelector('span').style.display = 'none';
+      const storageKey = container === document.querySelector('.footer > div:first-child .signature-upload')
+        ? STORAGE_KEY_SIG_CLASS
+        : STORAGE_KEY_SIG_HEAD;
+      localStorage.setItem(storageKey, e.target.result);
+    }
+    reader.readAsDataURL(file);
+  }
+}
+
+function loadImages() {
+  const logoData = localStorage.getItem(STORAGE_KEY_LOGO);
+  if (logoData) {
+    const container = document.querySelector('.school-logo');
+    let img = container.querySelector('img');
+    if (!img) {
+      img = document.createElement('img');
+      container.appendChild(img);
+    }
+    img.src = logoData;
+    container.querySelector('span').style.display = 'none';
+  }
+  const classSigData = localStorage.getItem(STORAGE_KEY_SIG_CLASS);
+  if (classSigData) {
+    const container = document.querySelector('.footer > div:first-child .signature-upload');
+    let img = container.querySelector('img');
+    if (!img) {
+      img = document.createElement('img');
+      container.appendChild(img);
+    }
+    img.src = classSigData;
+    container.querySelector('span').style.display = 'none';
+  }
+  const headSigData = localStorage.getItem(STORAGE_KEY_SIG_HEAD);
+  if (headSigData) {
+    const container = document.querySelector('.footer > div:last-child .signature-upload');
+    let img = container.querySelector('img');
+    if (!img) {
+      img = document.createElement('img');
+      container.appendChild(img);
+    }
+    img.src = headSigData;
+    container.querySelector('span').style.display = 'none';
+  }
+}
+
 // Initialize
 loadImages();
 loadSchoolHeader();
 addSubjectRow();
 calculateGrades();
+updateTermDisplay();
 startAutoSave();
 </script>
 </body>
