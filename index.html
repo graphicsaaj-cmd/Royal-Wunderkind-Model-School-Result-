@@ -574,7 +574,7 @@ function showAutoSave(message = "Auto-saved") {
   const notice = document.getElementById('autoSaveNotice');
   notice.textContent = message + " at " + new Date().toLocaleTimeString();
   clearTimeout(notice.hideTimer);
-  notice.hideTimer = setTimeout(() => notice.textContent = '', 3000);
+  notice.hideTimer = setTimeout(() => notice.textContent = '', 5000);  // Longer visibility for confirmation
 }
 
 function updateTermDisplay() {
@@ -583,19 +583,21 @@ function updateTermDisplay() {
 }
 document.getElementById('termSelect').addEventListener('change', updateTermDisplay);
 
+function performAutoSave() {
+  const studentID = document.getElementById('studentID').value.trim();
+  if (studentID) {
+    const currentData = JSON.stringify(getCurrentResultData());
+    if (currentData !== lastSavedResultData) {
+      localStorage.setItem(`result_${studentID}`, currentData);
+      lastSavedResultData = currentData;
+      showAutoSave("✅ Result auto-saved");
+    }
+  }
+}
+
 function startAutoSave() {
   if (autoSaveInterval) clearInterval(autoSaveInterval);
-  autoSaveInterval = setInterval(() => {
-    const studentID = document.getElementById('studentID').value.trim();
-    if (studentID) {
-      const currentData = JSON.stringify(getCurrentResultData());
-      if (currentData !== lastSavedResultData) {
-        localStorage.setItem(`result_${studentID}`, currentData);
-        lastSavedResultData = currentData;
-        showAutoSave("Result auto-saved");
-      }
-    }
-  }, 10000);
+  autoSaveInterval = setInterval(performAutoSave, 10000);
 }
 
 function generateStudentID() {
@@ -770,6 +772,7 @@ function clearResultForm() {
   document.querySelector('#resultTable tbody').innerHTML = '';
   addSubjectRow();
   calculateGrades();
+  lastSavedResultData = null;
 }
 
 function saveStudentResult() {
@@ -780,7 +783,7 @@ function saveStudentResult() {
   }
   const data = getCurrentResultData();
   localStorage.setItem(`result_${studentID}`, JSON.stringify(data));
-  showAutoSave("Manually saved");
+  alert('✅ Result manually saved successfully!');
   clearResultForm();
 }
 
@@ -794,7 +797,8 @@ function loadStudentResult() {
   if (saved) {
     const data = JSON.parse(saved);
     loadResultFromData(data);
-    document.getElementById('studentID').value = studentID;
+    lastSavedResultData = JSON.stringify(getCurrentResultData());
+    showAutoSave("Loaded & ready (auto-save active)");
   } else {
     alert('No result found for this Student ID.');
   }
@@ -1051,6 +1055,7 @@ addSubjectRow();
 calculateGrades();
 updateTermDisplay();
 startAutoSave();
+document.getElementById('studentID').addEventListener('blur', loadStudentResult);
 </script>
 </body>
 </html>
